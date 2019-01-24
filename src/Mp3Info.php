@@ -304,11 +304,11 @@ class Mp3Info {
             case 0b11: $this->channel = self::MONO; break;
         }
 
-        switch ($this->codecVersion.($this->channel == self::MONO ? 'mono' : 'stereo')) {
-            case '1stereo': $offset = 36; break;
-            case '1mono': $offset = 21; break;
-            case '2stereo': $offset = 21; break;
-            case '2mono': $offset = 13; break;
+        switch ($this->codecVersion << 1 | (int)(self::MONO == $this->channel)) {
+            case 0b010: $offset = 36; break;
+            case 0b011: $offset = 21; break;
+            case 0b100: $offset = 21; break;
+            case 0b101: $offset = 13; break;
         }
         fseek($fp, $pos + $offset);
         if (fread($fp, 4) == self::VBR_SYNC) {
