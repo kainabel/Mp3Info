@@ -176,9 +176,9 @@ class Mp3Info {
      */
     public function __construct($filename, $parseTags = false) {
         if (self::$_bitRateTable === null)
-            self::$_bitRateTable = require dirname(__FILE__).'/../data/bitRateTable.php';
+            self::$_bitRateTable = require __DIR__ .'/../data/bitRateTable.php';
         if (self::$_sampleRateTable === null)
-            self::$_sampleRateTable = require dirname(__FILE__).'/../data/sampleRateTable.php';
+            self::$_sampleRateTable = require __DIR__ .'/../data/sampleRateTable.php';
 
         if (!file_exists($filename))
             throw new \Exception('File '.$filename.' is not present!');
@@ -241,7 +241,7 @@ class Mp3Info {
                 : ceil($audioSize / $this->__cbrFrameSize);
 
             // recalculate average bit rate in vbr case
-            if ($this->isVbr && !is_null($framesCount)) {
+            if (!is_null($framesCount) && $this->isVbr) {
                 $avgFrameSize = $audioSize / $framesCount;
                 $this->bitRate = $avgFrameSize * $this->sampleRate / (1000 * $this->layerVersion == 3 ? 12 : 144);
             }
