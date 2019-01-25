@@ -374,11 +374,11 @@ class Mp3Info {
      * id3v2.2.0 tag header (10 bytes)
      *  ID3/file identifier      "ID3" (3 bytes)
      *  ID3 version              $02 00 (2 bytes)
-     *  ID3 flags                %xx000000 (1 byte)
+     *  ID3 flags                %ab000000 (1 byte)
      *  ID3 size             4 * %0xxxxxxx (4 bytes)
      * Flags:
-     *  x (bit 7) - unsynchronisation
-     *  x (bit 6) - compression
+     *  a - unsynchronisation
+     *  b - compression
      * -----------------------------------
      * id3v2.3.0 tag header (10 bytes)
      *  ID3v2/file identifier   "ID3" (3 bytes)
@@ -414,47 +414,49 @@ class Mp3Info {
     private function readId3v2Body($fp) {
         // read the rest of the id3v2 header
         $raw = fread($fp, 7);
-        $data = unpack('cmajor_version/cminor_version/H*', $raw);
+        $data = unpack('Cmajor_version/Cminor_version/Cflags/C4byte', $raw);
         $this->id3v2MajorVersion = $data['major_version'];
         $this->id3v2MinorVersion = $data['minor_version'];
-        $data = str_pad(base_convert($data[1], 16, 2), 40, 0, STR_PAD_LEFT);
-        $flags = substr($data, 0, 8);
-        if ($this->id3v2MajorVersion == 2) { // parse id3v2.2.0 header flags
-            $this->id3v2Flags = array(
-                'unsynchronisation' => (bool)substr($flags, 0, 1),
-                'compression' => (bool)substr($flags, 1, 1),
-            );
-        } else if ($this->id3v2MajorVersion == 3) { // parse id3v2.3.0 header flags
-            $this->id3v2Flags = array(
-                'unsynchronisation' => (bool)substr($flags, 0, 1),
-                'extended_header' => (bool)substr($flags, 1, 1),
-                'experimental_indicator' => (bool)substr($flags, 2, 1),
-            );
-            if ($this->id3v2Flags['extended_header'])
-                throw new \Exception('NEED TO PARSE EXTENDED HEADER!');
-        } else if ($this->id3v2MajorVersion == 4) { // parse id3v2.4.0 header flags
-            /*throw new \Exception('NEED TO PARSE id3v2.4.0 header flags!');*/
-            {}
+
+        // four %01111111 masked unsigned bytes in big endian order to long
+        $size = $data['byte1'] << 21 | $data['byte2'] << 14 | $data['byte3'] <<  7 | $data['byte4'];
+        $size += 10; // ID3v2.x tag header length
+
+        $flags = $data['flags'];
+        switch ($this->id3v2MajorVersion) {
+            case 2: // %ab000000 in v2.2
+                $this->id3v2Flags = [
+                    'unsynchronisation' => (bool)($flags & 0x80),
+                    'compression'       => (bool)($flags & 0x40) ];
+                break;
+            case 3: // %abc00000 in v2.3
+                $this->id3v2Flags = [
+                    'unsynchronisation'      => (bool)($flags & 0x80),
+                    'extended_header'        => (bool)($flags & 0x40),
+                    'experimental_indicator' => (bool)($flags & 0x20) ];
+                if ($this->id3v2Flags['extended_header'])
+                    throw new \Exception('NEED TO PARSE EXTENDED HEADER!');
+                break;
+            case 4: // %abcd0000 in v2.4
+                $this->id3v2Flags = [
+                    'unsynchronisation'      => (bool)($flags & 0x80),
+                    'extended_header'        => (bool)($flags & 0x40),
+                    'experimental_indicator' => (bool)($flags & 0x20),
+                    'footer_present'         => (bool)($flags & 0x10) ];
+                if ($this->id3v2Flags['footer_present'])
+                    $size += 10; // ID3v2.4 footer length
+                if ($this->id3v2Flags['extended_header'])
+                    throw new \Exception('NEED TO PARSE EXTENDED HEADER!');
+                break;
         }
-        $size = substr($data, 8, 32);
 
-        // some fucking shit
-        // getting only 7 of 8 bits of size bytes
-        $sizes = str_split($size, 8);
-        array_walk($sizes, function (&$value) { $value = substr($value, 1);});
-        $size = implode("", $sizes);
-        $size = bindec($size);
+        if ($this->id3v2MajorVersion == 3)
+            $this->parseId3v23Body($fp, $size);
+        /* else
+            throw new \Exception('Unsupported id3v2 tag version!');
+        */
 
-        if ($this->id3v2MajorVersion == 2)  // parse id3v2.2.0 body
-            /*throw new \Exception('NEED TO PARSE id3v2.2.0 flags!');*/
-            {}
-        else if ($this->id3v2MajorVersion == 3) // parse id3v2.3.0 body
-            $this->parseId3v23Body($fp, 10 + $size);
-        else if ($this->id3v2MajorVersion == 4)  // parse id3v2.4.0 body
-            /*throw new \Exception('NEED TO PARSE id3v2.4.0 flags!');*/
-            {}
-
-        return 10 + $size; // 10 bytes - header, rest - body
+        return $size;
     }
 
     /**
